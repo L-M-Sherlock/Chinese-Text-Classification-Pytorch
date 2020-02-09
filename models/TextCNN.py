@@ -54,7 +54,8 @@ class Model(nn.Module):
 
     def conv_and_pool(self, x, conv):
         x = F.relu(conv(x)).squeeze(3)
-        x = F.max_pool1d(x, x.size(2)).squeeze(2)
+        pool_size = int(x.size(2)) # max_pool1d 不接受 tensor 类型，而 trace 过程中 shape 会被转换，这里手动转回来
+        x = F.max_pool1d(x, pool_size).squeeze(2)
         return x
 
     def forward(self, x):

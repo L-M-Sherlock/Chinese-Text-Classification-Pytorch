@@ -76,6 +76,11 @@ def train(config, model, train_iter, dev_iter, test_iter):
                 break
         if flag:
             break
+
+    train_sample = list(enumerate(train_iter))[0][1][0]
+    writer.add_graph(model, (train_sample, ))
+    # 加入网络可视化
+
     writer.close()
     test(config, model, test_iter)
 
