@@ -12,7 +12,7 @@ args = parser.parse_args()
 
 
 if __name__ == '__main__':
-    dataset = 'THUCNews'  # 数据集
+    dataset = 'HITSZQA'  # 数据集
     UNK, PAD = '<UNK>', '<PAD>'  # 未知字，padding符号
 
     # 搜狗新闻:embedding_SougouNews.npz, 腾讯:embedding_Tencent.npz, 随机初始化:random
