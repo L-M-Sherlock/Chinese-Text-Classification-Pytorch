@@ -6,6 +6,7 @@ import pickle as pkl
 from tqdm import tqdm
 import time
 from datetime import timedelta
+from typing import Callable, List, NamedTuple, Optional, Tuple
 
 
 MAX_VOCAB_SIZE = 10000  # 词表长度限制
@@ -28,44 +29,106 @@ def build_vocab(file_path, tokenizer, max_size, min_freq):
     return vocab_dic
 
 
-def build_dataset(config, ues_word):
-    if ues_word:
-        tokenizer = lambda x: x.split(' ')  # 以空格隔开，word-level
-    else:
-        tokenizer = lambda x: [y for y in x]  # char-level
-    if os.path.exists(config.vocab_path):
-        vocab = pkl.load(open(config.vocab_path, 'rb'))
-    else:
-        vocab = build_vocab(config.train_path, tokenizer=tokenizer, max_size=MAX_VOCAB_SIZE, min_freq=1)
-        pkl.dump(vocab, open(config.vocab_path, 'wb'))
-    print(f"Vocab size: {len(vocab)}")
+# def build_dataset(config, ues_word):
+#     if ues_word:
+#         tokenizer = lambda x: x.split(' ')  # 以空格隔开，word-level
+#     else:
+#         tokenizer = lambda x: [y for y in x]  # char-level
+#     if os.path.exists(config.vocab_path):
+#         vocab = pkl.load(open(config.vocab_path, 'rb'))
+#     else:
+#         vocab = build_vocab(config.train_path, tokenizer=tokenizer, max_size=MAX_VOCAB_SIZE, min_freq=1)
+#         pkl.dump(vocab, open(config.vocab_path, 'wb'))
+#     print(f"Vocab size: {len(vocab)}")
+#
+#     def load_dataset(path, pad_size=32):
+#         contents = []
+#         with open(path, 'r', encoding='UTF-8') as f:
+#             for line in tqdm(f):
+#                 lin = line.strip()
+#                 if not lin:
+#                     continue
+#                 content, label = lin.split('\t')
+#                 words_line = []
+#                 token = tokenizer(content)
+#                 seq_len = len(token)
+#                 if pad_size:
+#                     if len(token) < pad_size:
+#                         token.extend([PAD] * (pad_size - len(token)))
+#                     else:
+#                         token = token[:pad_size]
+#                         seq_len = pad_size
+#                 # word to id
+#                 for word in token:
+#                     words_line.append(vocab.get(word, vocab.get(UNK)))
+#                 contents.append((words_line, int(label), seq_len))
+#         return contents  # [([...], 0), ([...], 1), ...]
+#     train = load_dataset(config.train_path, config.pad_size)
+#     dev = load_dataset(config.dev_path, config.pad_size)
+#     test = load_dataset(config.test_path, config.pad_size)
+#     return vocab, train, dev, test
 
-    def load_dataset(path, pad_size=32):
-        contents = []
-        with open(path, 'r', encoding='UTF-8') as f:
-            for line in tqdm(f):
-                lin = line.strip()
-                if not lin:
-                    continue
-                content, label = lin.split('\t')
-                words_line = []
-                token = tokenizer(content)
-                seq_len = len(token)
-                if pad_size:
-                    if len(token) < pad_size:
-                        token.extend([PAD] * (pad_size - len(token)))
-                    else:
-                        token = token[:pad_size]
-                        seq_len = pad_size
-                # word to id
-                for word in token:
-                    words_line.append(vocab.get(word, vocab.get(UNK)))
-                contents.append((words_line, int(label), seq_len))
-        return contents  # [([...], 0), ([...], 1), ...]
-    train = load_dataset(config.train_path, config.pad_size)
-    dev = load_dataset(config.dev_path, config.pad_size)
-    test = load_dataset(config.test_path, config.pad_size)
-    return vocab, train, dev, test
+
+class DataLine(NamedTuple):
+    tokens: List[int]
+    label: int
+    token_len: int  # useless. Can be inferred from tokens.
+    mask: List[int]  # also useless(?). Marks whether a token is pad.
+
+
+def build_dataset(
+        dataset_path: str,
+        tokenizer: Callable[[str], List[int]],
+        pad_size: Optional[int],
+        train_size: float,
+        test_size: float
+) -> Tuple[List[DataLine], List[DataLine], List[DataLine]]:
+    """
+    Build dataset from one single file to 3 sets to fit Bert model.
+
+    :param dataset_path: Path to the dataset file.
+    :param tokenizer: A function that convert a line into a list of integer ids. It is used by both content and label.
+    :param pad_size: Padding size. If none, no padding.
+    :param train_size: A value between 0 and 1 indicating the proportion of the dataset to include in the train split.
+    :param test_size: A value between 0 and 1 indicating the proportion of the dataset to include in the test split.
+    :return: train set, dev set, test set
+
+    todo: implement tokenizer
+    """
+
+    # from pathlib import Path
+    # dataset_path = Path(__file__).parent.absolute().joinpath(dataset_path)
+
+    train, dev, test = [], [], []
+    with open(dataset_path, encoding='utf-8') as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            content, label = line.rsplit('\t')
+            tokens = tokenizer(content)
+            token_len = len(tokens)
+
+            mask = []
+            if pad_size:
+                if token_len <= pad_size:
+                    mask = [1] * token_len + [0] * (pad_size - token_len)
+                    tokens.extend([0] * (pad_size - token_len))
+                else:
+                    token_len = pad_size
+                    mask = [1] * token_len
+                    tokens = tokens[:pad_size]
+
+            label = tokenizer(label)[0]
+            dataline = DataLine(tokens, label, token_len, mask)
+            rand = np.random.uniform()
+            if rand < train_size:
+                train.append(dataline)
+            elif rand < train_size + test_size:
+                test.append(dataline)
+            else:
+                dev.append(dataline)
+    return train, dev, test
 
 
 class DatasetIterater(object):
